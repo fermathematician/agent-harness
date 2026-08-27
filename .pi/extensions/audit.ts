@@ -1,0 +1,82 @@
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import fs from "node:fs";
+import path from "node:path";
+
+const AUDIT_DIR = ".pi/audit";
+const AUDIT_FILE = path.join(AUDIT_DIR, "tool-calls.jsonl");
+
+function ensureAuditDir() {
+  fs.mkdirSync(AUDIT_DIR, { recursive: true });
+}
+
+function appendAudit(entry: Record<string, unknown>) {
+  ensureAuditDir();
+
+  fs.appendFileSync(
+    AUDIT_FILE,
+    JSON.stringify(entry) + "\n",
+    "utf8",
+  );
+}
+
+export default function audit(pi: ExtensionAPI) {
+  pi.on("tool_call", async (event) => {
+    const base = {
+      timestamp: new Date().toISOString(),
+      tool: event.toolName,
+      toolCallId: event.toolCallId,
+    };
+
+    if (isToolCallEventType("bash", event)) {
+      appendAudit({
+        ...base,
+        input: {
+          command: event.input.command,
+        },
+      });
+
+      return;
+    }
+
+    if (isToolCallEventType("read", event)) {
+      appendAudit({
+        ...base,
+        input: {
+          path: event.input.path,
+          offset: event.input.offset,
+          limit: event.input.limit,
+        },
+      });
+
+      return;
+    }
+
+    if (isToolCallEventType("write", event)) {
+      appendAudit({
+        ...base,
+        input: {
+          path: event.input.path,
+        },
+      });
+
+      return;
+    }
+
+    if (isToolCallEventType("edit", event)) {
+      appendAudit({
+        ...base,
+        input: {
+          path: event.input.path,
+        },
+      });
+
+      return;
+    }
+
+    appendAudit({
+      ...base,
+      input: event.input,
+    });
+  });
+}

@@ -1,5 +1,8 @@
 # Plan
 
+Task:
+$ARGUMENTS
+
 Before making any code changes:
 
 1. Read the relevant files and understand the current implementation.

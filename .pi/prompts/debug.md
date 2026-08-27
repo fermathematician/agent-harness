@@ -1,5 +1,8 @@
 # Debug
 
+Problem:
+$ARGUMENTS
+
 Investigate the reported problem before making changes.
 
 Follow this process:
