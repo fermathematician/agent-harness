@@ -1,8 +1,5 @@
 # Plan
 
-Task:
-$ARGUMENTS
-
 Before making any code changes:
 
 1. Read the relevant files and understand the current implementation.
@@ -17,3 +14,6 @@ Your response should include:
 - Files likely involved
 - Proposed steps
 - Risks or uncertainties
+
+Keep investigation proportional to the scope of the task.
+Do not inspect unrelated files once you have enough information to produce a reliable plan.

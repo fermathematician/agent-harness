@@ -1,8 +1,5 @@
 # Execute
 
-Task:
-$ARGUMENTS
-
 Implement the requested change following the repository instructions and the approved plan, when one exists.
 
 ## Before modifying code
@@ -172,5 +169,3 @@ Examples:
 Do not create the commit.
 Do not stage files.
 Only suggest the commit message.
-
-
