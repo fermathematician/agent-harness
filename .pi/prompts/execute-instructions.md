@@ -24,6 +24,15 @@ Implement the requested change following the repository instructions and the app
 8. Do not silently expand the scope of the task.
 9. If you discover a separate issue, report it instead of fixing it unless it blocks the requested task.
 
+## Execution discipline
+
+- Execute the approved plan directly when the implementation is already clear.
+- Do not reopen decisions that were already resolved during planning unless new evidence reveals a meaningful problem.
+- Keep investigation and reasoning proportional to the complexity and risk of the task.
+- For simple, well-specified changes, prefer a short execution cycle:
+  inspect → modify → verify → report.
+- Do not sacrifice correctness, testing, or safety for brevity.
+
 ## Verification
 
 After implementing:
