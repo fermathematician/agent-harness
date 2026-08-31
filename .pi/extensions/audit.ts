@@ -13,16 +13,13 @@ function ensureAuditDir() {
 function appendAudit(entry: Record<string, unknown>) {
   ensureAuditDir();
 
-  fs.appendFileSync(
-    AUDIT_FILE,
-    JSON.stringify(entry) + "\n",
-    "utf8",
-  );
+  fs.appendFileSync(AUDIT_FILE, JSON.stringify(entry) + "\n", "utf8");
 }
 
 export default function audit(pi: ExtensionAPI) {
   pi.on("tool_call", async (event) => {
     const base = {
+      event: "tool_call",
       timestamp: new Date().toISOString(),
       tool: event.toolName,
       toolCallId: event.toolCallId,
@@ -35,7 +32,6 @@ export default function audit(pi: ExtensionAPI) {
           command: event.input.command,
         },
       });
-
       return;
     }
 
@@ -48,7 +44,6 @@ export default function audit(pi: ExtensionAPI) {
           limit: event.input.limit,
         },
       });
-
       return;
     }
 
@@ -59,7 +54,6 @@ export default function audit(pi: ExtensionAPI) {
           path: event.input.path,
         },
       });
-
       return;
     }
 
@@ -70,13 +64,23 @@ export default function audit(pi: ExtensionAPI) {
           path: event.input.path,
         },
       });
-
       return;
     }
 
     appendAudit({
       ...base,
       input: event.input,
+    });
+  });
+
+  pi.on("tool_execution_end", async (event) => {
+    appendAudit({
+      event: "tool_execution_end",
+      timestamp: new Date().toISOString(),
+      tool: event.toolName,
+      toolCallId: event.toolCallId,
+      isError: event.isError,
+      result: event.result,
     });
   });
 }
