@@ -15,5 +15,12 @@ Your response should include:
 - Proposed steps
 - Risks or uncertainties
 
-Keep investigation proportional to the scope of the task.
-Do not inspect unrelated files once you have enough information to produce a reliable plan.
+## Planning guidelines
+
+1. Keep investigation proportional to the scope of the task.
+   - Do not inspect unrelated files once you have enough information to produce a reliable plan.
+
+2. Handle ambiguity according to its impact.
+   - If a reasonable, low-risk assumption can be made, do not ask for confirmation.
+   - State the assumption explicitly in the plan.
+   - Ask a question only when the ambiguity could materially change the implementation.
