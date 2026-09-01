@@ -19,7 +19,9 @@ Key components:
       rules and a structured completion report;
     - `review.md` and `debug.md` — code review and debugging workflows.
   - `extensions/` — safety extensions:
-    - `audit.ts` — records every tool call to `.pi/audit/tool-calls.jsonl`;
+    - `audit.ts` — records every tool call to `.pi/audit/tool-calls.jsonl`,
+      stamping each event with `sessionBaseCommit`, the current Git HEAD
+      read by the harness itself;
     - `safety.ts` — implements the `/plan` and `/execute` commands, read-only
       plan mode, blocking of Git write operations, protection of the
       `.pi/extensions` directory itself, and bash command guardrails
@@ -40,4 +42,7 @@ Safety model:
    read-only Git commands (`git status`, `git diff`, `git log`, `git show`),
    but never stages, commits, pushes, or rewrites history.
 4. **Everything is audited.** All tool calls are logged to
-   `.pi/audit/tool-calls.jsonl`, which is ignored by Git.
+   `.pi/audit/tool-calls.jsonl`, which is ignored by Git. Every event also
+   carries `sessionBaseCommit`, the Git HEAD at the time of the event; since
+   the agent cannot commit, a change of that value in the log marks a
+   session boundary created by a human commit.

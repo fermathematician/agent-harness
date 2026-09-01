@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -10,10 +11,26 @@ function ensureAuditDir() {
   fs.mkdirSync(AUDIT_DIR, { recursive: true });
 }
 
+function readSessionBaseCommit(): string | null {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
 function appendAudit(entry: Record<string, unknown>) {
   ensureAuditDir();
 
-  fs.appendFileSync(AUDIT_FILE, JSON.stringify(entry) + "\n", "utf8");
+  const auditEntry = {
+    ...entry,
+    sessionBaseCommit: readSessionBaseCommit(),
+  };
+
+  fs.appendFileSync(AUDIT_FILE, JSON.stringify(auditEntry) + "\n", "utf8");
 }
 
 export default function audit(pi: ExtensionAPI) {
