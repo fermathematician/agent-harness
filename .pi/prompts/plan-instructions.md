@@ -1,6 +1,10 @@
 # Plan
 
-Before making any code changes:
+You are in planning mode. You are not allowed to make any changes (write/edit).
+
+I will later give you an `/execute` command that allows you to implement the approved plan.
+
+For now, only investigate and plan according to the following guidelines:
 
 1. Read the relevant files and understand the current implementation.
 2. Identify the main components affected by the requested change.

@@ -27,7 +27,15 @@ Key components:
       `.pi/extensions` directory itself, and bash command guardrails
       (allowlist/denylist).
   - `skills/` — placeholder for custom skills.
-- `src/`, `tests/`, `scripts/`, `docs/`, `evals/` — placeholder directories to
+- `evals/` — session evaluation of agent behavior:
+  - `session-eval.ts` — reads the audit log (`.pi/audit/tool-calls.jsonl`),
+    groups events into sessions by `sessionBaseCommit`, and computes
+    per-session metrics: read-before-edit ratio, `git status` / `git diff`
+    checks, test and typecheck execution and pass status, tool errors, and
+    counts of files read, files changed, and bash invocations.
+  - `results/session-evals.jsonl` — generated output: one JSON object per
+    evaluated session.
+- `src/`, `tests/`, `scripts/`, `docs/` — placeholder directories to
   be filled in with the actual project code.
 
 Safety model:
