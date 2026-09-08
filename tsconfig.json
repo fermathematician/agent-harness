@@ -6,7 +6,12 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": [".pi/extensions/**/*.ts", "evals/**/*.ts"]
+  "include": [
+    ".pi/extensions/**/*.ts",
+    ".pi/lib/**/*.ts",
+    "evals/**/*.ts"
+  ]
 }

@@ -1,37 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
-import { execFileSync } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
-
-const AUDIT_DIR = ".pi/audit";
-const AUDIT_FILE = path.join(AUDIT_DIR, "tool-calls.jsonl");
-
-function ensureAuditDir() {
-  fs.mkdirSync(AUDIT_DIR, { recursive: true });
-}
-
-function readSessionBaseCommit(): string | null {
-  try {
-    return execFileSync("git", ["rev-parse", "HEAD"], {
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "pipe"],
-    }).trim();
-  } catch {
-    return null;
-  }
-}
-
-function appendAudit(entry: Record<string, unknown>) {
-  ensureAuditDir();
-
-  const auditEntry = {
-    ...entry,
-    sessionBaseCommit: readSessionBaseCommit(),
-  };
-
-  fs.appendFileSync(AUDIT_FILE, JSON.stringify(auditEntry) + "\n", "utf8");
-}
+import { appendAudit } from "../lib/audit.ts";
 
 export default function audit(pi: ExtensionAPI) {
   pi.on("tool_call", async (event) => {

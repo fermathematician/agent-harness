@@ -28,3 +28,9 @@ Your response should include:
    - If a reasonable, low-risk assumption can be made, do not ask for confirmation.
    - State the assumption explicitly in the plan.
    - Ask a question only when the ambiguity could materially change the implementation.
+
+## Restrictions
+
+Important constraint: `.pi/extensions/` is protected by the harness. You may read those files, but you cannot modify them, even in execute mode.
+
+If the proposed solution requires changes inside `.pi/extensions/`, identify the exact changes needed and stop at the plan. I will apply those protected-file edits manually.

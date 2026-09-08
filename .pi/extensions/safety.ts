@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { recordGuardrailBlock } from "../lib/audit.ts";
 
 const PROTECTED_PATH = ".pi/extensions";
 
@@ -79,6 +80,16 @@ export default function safety(pi: ExtensionAPI) {
           "warning",
         );
 
+        recordGuardrailBlock({
+          guardrail: "safety",
+          category: "protected_path",
+          reason:
+            ".pi/extensions is protected. The agent may read safety extensions but may not modify them.",
+          tool: event.toolName,
+          toolCallId: event.toolCallId,
+          input: { path: event.input.path },
+        });
+
         return {
           block: true,
           reason:
@@ -93,6 +104,16 @@ export default function safety(pi: ExtensionAPI) {
           `Blocked edit to protected path: ${event.input.path}`,
           "warning",
         );
+
+        recordGuardrailBlock({
+          guardrail: "safety",
+          category: "protected_path",
+          reason:
+            ".pi/extensions is protected. The agent may read safety extensions but may not modify them.",
+          tool: event.toolName,
+          toolCallId: event.toolCallId,
+          input: { path: event.input.path },
+        });
 
         return {
           block: true,
@@ -112,6 +133,17 @@ export default function safety(pi: ExtensionAPI) {
       if (containsBlockedGitCommand(command)) {
         ctx.ui.notify(`Blocked Git write operation:\n${command}`, "warning");
 
+        recordGuardrailBlock({
+          guardrail: "safety",
+          category: "git_write",
+          reason:
+            "Git write/history operations are human-controlled. " +
+            "Use read-only commands such as git status, git diff, git log, or git show.",
+          tool: event.toolName,
+          toolCallId: event.toolCallId,
+          input: { command },
+        });
+
         return {
           block: true,
           reason:
@@ -125,6 +157,16 @@ export default function safety(pi: ExtensionAPI) {
           `Blocked modification of protected path:\n${command}`,
           "warning",
         );
+
+        recordGuardrailBlock({
+          guardrail: "safety",
+          category: "protected_path",
+          reason:
+            ".pi/extensions is protected from agent modifications, including modifications performed through bash.",
+          tool: event.toolName,
+          toolCallId: event.toolCallId,
+          input: { command },
+        });
 
         return {
           block: true,

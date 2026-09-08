@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import fs from "node:fs";
 import path from "node:path";
+import { recordGuardrailBlock } from "../lib/audit.ts";
 
 const PLAN_PROMPT_PATH = ".pi/prompts/plan-instructions.md";
 const EXECUTE_PROMPT_PATH = ".pi/prompts/execute-instructions.md";
@@ -206,12 +207,35 @@ export default function planMode(pi: ExtensionAPI) {
   });
 
   pi.on("tool_call", async (event, ctx) => {
-    if (
-      planModeEnabled &&
-      (isToolCallEventType("write", event) ||
-        isToolCallEventType("edit", event))
-    ) {
+    if (planModeEnabled && isToolCallEventType("write", event)) {
       ctx.ui.notify(`Blocked ${event.toolName} in plan mode.`, "warning");
+
+      recordGuardrailBlock({
+        guardrail: "plan-mode",
+        category: "plan_mode_tool",
+        reason: "Plan mode is read-only. File modifications are not permitted.",
+        tool: event.toolName,
+        toolCallId: event.toolCallId,
+        input: { path: event.input.path },
+      });
+
+      return {
+        block: true,
+        reason: "Plan mode is read-only. File modifications are not permitted.",
+      };
+    }
+
+    if (planModeEnabled && isToolCallEventType("edit", event)) {
+      ctx.ui.notify(`Blocked ${event.toolName} in plan mode.`, "warning");
+
+      recordGuardrailBlock({
+        guardrail: "plan-mode",
+        category: "plan_mode_tool",
+        reason: "Plan mode is read-only. File modifications are not permitted.",
+        tool: event.toolName,
+        toolCallId: event.toolCallId,
+        input: { path: event.input.path },
+      });
 
       return {
         block: true,
@@ -224,6 +248,16 @@ export default function planMode(pi: ExtensionAPI) {
 
       if (planModeEnabled && !isSafeCommand(command)) {
         ctx.ui.notify(`Blocked command in plan mode:\n${command}`, "warning");
+
+        recordGuardrailBlock({
+          guardrail: "plan-mode",
+          category: "plan_mode_command",
+          reason:
+            "Plan mode is read-only. Only allowlisted inspection commands are permitted.",
+          tool: event.toolName,
+          toolCallId: event.toolCallId,
+          input: { command },
+        });
 
         return {
           block: true,

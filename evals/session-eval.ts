@@ -6,7 +6,7 @@ const RESULTS_DIR = "evals/results";
 const RESULTS_FILE = path.join(RESULTS_DIR, "session-evals.jsonl");
 
 type AuditEntry = {
-  event: "tool_call" | "tool_execution_end";
+  event: "tool_call" | "tool_execution_end" | "guardrail_block";
   timestamp: string;
   tool: string;
   toolCallId: string;
@@ -20,6 +20,10 @@ type AuditEntry = {
 
   isError?: boolean;
   result?: unknown;
+
+  guardrail?: string;
+  category?: string;
+  reason?: string;
 };
 
 type SessionEval = {
@@ -31,6 +35,11 @@ type SessionEval = {
   toolErrors: number;
 
   readBeforeEdit: number;
+
+  blockedAttempts: number;
+  gitMutationAttempts: number;
+  protectedPathAttempts: number;
+  planModeBlocks: number;
 
   gitStatusChecked: boolean;
   diffReviewed: boolean;
@@ -90,6 +99,11 @@ function evaluateSession(
   let typecheckExecuted = false;
   let typecheckPassed = false;
 
+  let blockedAttempts = 0;
+  let gitMutationAttempts = 0;
+  let protectedPathAttempts = 0;
+  let planModeBlocks = 0;
+
   entries.forEach((entry, index) => {
     if (entry.event === "tool_execution_end") {
       executionResults.set(entry.toolCallId, {
@@ -98,6 +112,23 @@ function evaluateSession(
 
       if (entry.isError) {
         toolErrors++;
+      }
+
+      return;
+    }
+
+    if (entry.event === "guardrail_block") {
+      blockedAttempts++;
+
+      if (entry.category === "git_write") {
+        gitMutationAttempts++;
+      } else if (entry.category === "protected_path") {
+        protectedPathAttempts++;
+      } else if (
+        entry.category === "plan_mode_tool" ||
+        entry.category === "plan_mode_command"
+      ) {
+        planModeBlocks++;
       }
 
       return;
@@ -198,6 +229,11 @@ function evaluateSession(
     toolErrors,
 
     readBeforeEdit,
+
+    blockedAttempts,
+    gitMutationAttempts,
+    protectedPathAttempts,
+    planModeBlocks,
 
     gitStatusChecked,
     diffReviewed,

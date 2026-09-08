@@ -27,12 +27,19 @@ Key components:
       `.pi/extensions` directory itself, and bash command guardrails
       (allowlist/denylist).
   - `skills/` — placeholder for custom skills.
+  - `lib/` — shared harness modules:
+    - `audit.ts` — the shared audit writer: appends entries to
+      `.pi/audit/tool-calls.jsonl`, stamping each entry with
+      `sessionBaseCommit`, and provides `recordGuardrailBlock` so guardrail
+      extensions record their block decisions as audit facts.
 - `evals/` — session evaluation of agent behavior:
   - `session-eval.ts` — reads the audit log (`.pi/audit/tool-calls.jsonl`),
     groups events into sessions by `sessionBaseCommit`, and computes
     per-session metrics: read-before-edit ratio, `git status` / `git diff`
-    checks, test and typecheck execution and pass status, tool errors, and
-    counts of files read, files changed, and bash invocations.
+    checks, test and typecheck execution and pass status, tool errors,
+    counts of files read, files changed, and bash invocations, and
+    guardrail block metrics (`blockedAttempts`, `gitMutationAttempts`,
+    `protectedPathAttempts`, `planModeBlocks`).
   - `results/session-evals.jsonl` — generated output: one JSON object per
     evaluated session.
 - `src/`, `tests/`, `scripts/`, `docs/` — placeholder directories to
@@ -53,4 +60,9 @@ Safety model:
    `.pi/audit/tool-calls.jsonl`, which is ignored by Git. Every event also
    carries `sessionBaseCommit`, the Git HEAD at the time of the event; since
    the agent cannot commit, a change of that value in the log marks a
-   session boundary created by a human commit.
+   session boundary created by a human commit. Every guardrail block is
+   additionally recorded as an explicit `guardrail_block` entry carrying the
+   `guardrail` that decided, a stable machine-readable `category` (`git_write`,
+   `protected_path`, `plan_mode_tool`, `plan_mode_command`), and the
+   human-facing `reason`, so blocked attempts are measurable without
+   inferring them from a missing `tool_execution_end` event.
