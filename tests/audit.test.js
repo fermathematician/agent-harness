@@ -221,7 +221,11 @@ test("records sessionBaseCommit from the current Git HEAD on every audit event",
     assert.equal(entries[0].tool, "bash");
     assert.equal(entries[0].toolCallId, "call-bash-1");
     assert.deepEqual(entries[0].input, { command: "git status" });
-    assert.deepEqual(entries[1].input, { path: "README.md", offset: 1, limit: 10 });
+    assert.deepEqual(entries[1].input, {
+      path: "README.md",
+      offset: 1,
+      limit: 10,
+    });
     assert.deepEqual(entries[2].input, { path: "notes.txt" });
     assert.deepEqual(entries[3].input, { path: "notes.txt" });
     assert.deepEqual(entries[4].input, { pattern: "foo" });
@@ -229,7 +233,9 @@ test("records sessionBaseCommit from the current Git HEAD on every audit event",
     assert.equal(entries[5].tool, "bash");
     assert.equal(entries[5].toolCallId, "call-bash-1");
     assert.equal(entries[5].isError, false);
-    assert.deepEqual(entries[5].result, { content: [{ type: "text", text: "ok" }] });
+    assert.deepEqual(entries[5].result, {
+      content: [{ type: "text", text: "ok" }],
+    });
   } finally {
     process.chdir(previousCwd);
     fs.rmSync(workdir, { recursive: true, force: true });
@@ -444,6 +450,146 @@ test("plan mode records guardrail_block events for blocked calls", async () => {
     });
     assert.equal(restoredWrite, undefined);
     assert.equal(guardrailBlockEntries(workdir).length, 2);
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("safety enforces Git read-only allowlist", async () => {
+  const workdir = createWorkdir({ withGit: true });
+  const previousCwd = process.cwd();
+  process.chdir(workdir);
+
+  try {
+    const pi = createFakePi();
+    safetyExtension(pi);
+
+    const allowed = [
+      "git status",
+      "git status --short",
+      "git diff",
+      "git diff --staged",
+      "git log --oneline",
+      "git show HEAD",
+      "git rev-parse HEAD",
+      "git ls-files",
+      "git ls-tree HEAD",
+      "git remote -v",
+    ];
+
+    const blocked = [
+      "git",
+      "git add file.txt",
+      "git commit -m x",
+      "git push origin main",
+      "git reset --hard",
+      "git update-ref HEAD abc123",
+      "git update-index --add file.txt",
+      "git commit-tree HEAD",
+      "git symbolic-ref HEAD refs/heads/evil",
+      "git remote",
+      "git remote --verbose",
+      "git remote add origin git@example.com:x/y.git",
+      "git ls-remote",
+      "git --no-pager log",
+      "git status && git commit -m x",
+    ];
+
+    for (const command of allowed) {
+      const result = await emit(pi, "tool_call", {
+        toolName: "bash",
+        toolCallId: `allowed-${command}`,
+        input: { command },
+      });
+
+      assert.equal(result, undefined, `Expected allowed: ${command}`);
+    }
+
+    for (const command of blocked) {
+      const result = await emit(pi, "tool_call", {
+        toolName: "bash",
+        toolCallId: `blocked-${command}`,
+        input: { command },
+      });
+
+      assert.equal(result?.block, true, `Expected blocked: ${command}`);
+    }
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("plan mode allows only standalone read-only Git commands", async () => {
+  const workdir = createWorkdir({ withGit: true });
+  const previousCwd = process.cwd();
+  process.chdir(workdir);
+
+  const promptsDir = path.join(workdir, ".pi", "prompts");
+  fs.mkdirSync(promptsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(promptsDir, "plan-instructions.md"),
+    "Plan instructions.",
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(promptsDir, "execute-instructions.md"),
+    "Execute instructions.",
+    "utf8",
+  );
+
+  try {
+    const pi = createFakePi();
+    planModeExtension(pi);
+
+    const planCommand = pi.commands.get("plan");
+    await planCommand.handler("guardrail test", createContext());
+
+    const allowed = [
+      "git status",
+      "git diff --staged",
+      "git log --oneline",
+      "git show HEAD",
+      "git rev-parse HEAD",
+      "git ls-files",
+      "git ls-tree HEAD",
+      "git remote -v",
+    ];
+
+    const blocked = [
+      "git",
+      "git commit -m x",
+      "git update-ref HEAD abc123",
+      "git remote",
+      "git remote --verbose",
+      "git ls-remote",
+      "git --no-pager log",
+      "git status && echo oi",
+      "git diff | cat",
+      "git log; echo oi",
+      "cat README.md && pwd",
+    ];
+
+    for (const command of allowed) {
+      const result = await emit(pi, "tool_call", {
+        toolName: "bash",
+        toolCallId: `plan-allowed-${command}`,
+        input: { command },
+      });
+
+      assert.equal(result, undefined, `Expected allowed in plan: ${command}`);
+    }
+
+    for (const command of blocked) {
+      const result = await emit(pi, "tool_call", {
+        toolName: "bash",
+        toolCallId: `plan-blocked-${command}`,
+        input: { command },
+      });
+
+      assert.equal(result?.block, true, `Expected blocked in plan: ${command}`);
+    }
   } finally {
     process.chdir(previousCwd);
     fs.rmSync(workdir, { recursive: true, force: true });

@@ -10,6 +10,18 @@ const EXECUTE_PROMPT_PATH = ".pi/prompts/execute-instructions.md";
 const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls"];
 const PLAN_MODE_DISABLED_TOOLS = new Set(["edit", "write"]);
 
+const SHELL_COMPOSITION_PATTERN = /[;&|<>`\r\n]|[$][(]/;
+
+const ALLOWED_GIT_SUBCOMMANDS = new Set([
+  "status",
+  "diff",
+  "log",
+  "show",
+  "rev-parse",
+  "ls-files",
+  "ls-tree",
+]);
+
 const DESTRUCTIVE_PATTERNS = [
   /\brm\b/i,
   /\brmdir\b/i,
@@ -33,7 +45,6 @@ const DESTRUCTIVE_PATTERNS = [
   /\bpip\s+(install|uninstall)/i,
   /\bapt(-get)?\s+(install|remove|purge|update|upgrade)/i,
   /\bbrew\s+(install|uninstall|upgrade)/i,
-  /\bgit\s+(add|commit|push|pull|merge|rebase|reset|checkout|branch\s+-[dD]|stash|cherry-pick|revert|tag|init|clone)/i,
   /\bsudo\b/i,
   /\bsu\b/i,
   /\bkill\b/i,
@@ -82,8 +93,6 @@ const SAFE_PATTERNS = [
   /^\s*top\b/,
   /^\s*htop\b/,
   /^\s*free\b/,
-  /^\s*git\s+(status|log|diff|show|branch|remote|config\s+--get)/i,
-  /^\s*git\s+ls-/i,
   /^\s*npm\s+(list|ls|view|info|search|outdated|audit)/i,
   /^\s*yarn\s+(list|info|why|audit)/i,
   /^\s*node\s+--version/i,
@@ -99,11 +108,40 @@ const SAFE_PATTERNS = [
   /^\s*eza\b/,
 ];
 
+function isAllowedGitCommand(command: string): boolean {
+  const trimmed = command.trim();
+
+  if (/^git\s+remote\s+-v$/i.test(trimmed)) {
+    return true;
+  }
+
+  const match = /^git\s+([a-zA-Z0-9_-]+)(?:\s+.*)?$/i.exec(trimmed);
+
+  if (!match) {
+    return false;
+  }
+
+  return ALLOWED_GIT_SUBCOMMANDS.has(match[1].toLowerCase());
+}
+
 function isSafeCommand(command: string): boolean {
+  if (SHELL_COMPOSITION_PATTERN.test(command)) {
+    return false;
+  }
+
   const isDestructive = DESTRUCTIVE_PATTERNS.some((p) => p.test(command));
+
+  if (isDestructive) {
+    return false;
+  }
+
+  if (isAllowedGitCommand(command)) {
+    return true;
+  }
+
   const isSafe = SAFE_PATTERNS.some((p) => p.test(command));
 
-  return !isDestructive && isSafe;
+  return isSafe;
 }
 
 export default function planMode(pi: ExtensionAPI) {

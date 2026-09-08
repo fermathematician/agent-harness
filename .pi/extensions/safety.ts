@@ -4,24 +4,46 @@ import { recordGuardrailBlock } from "../lib/audit.ts";
 
 const PROTECTED_PATH = ".pi/extensions";
 
-const BLOCKED_GIT_COMMANDS: RegExp[] = [
-  /\bgit\s+add\b/i,
-  /\bgit\s+commit\b/i,
-  /\bgit\s+push\b/i,
-  /\bgit\s+pull\b/i,
-  /\bgit\s+merge\b/i,
-  /\bgit\s+rebase\b/i,
-  /\bgit\s+reset\b/i,
-  /\bgit\s+revert\b/i,
-  /\bgit\s+cherry-pick\b/i,
-  /\bgit\s+stash\b/i,
-  /\bgit\s+checkout\b/i,
-  /\bgit\s+switch\b/i,
-  /\bgit\s+branch\b/i,
-  /\bgit\s+tag\b/i,
-  /\bgit\s+config\b/i,
-  /\bgit\s+remote\s+(add|remove|rename|set-url)\b/i,
-];
+const ALLOWED_GIT_SUBCOMMANDS = new Set([
+  "status",
+  "diff",
+  "log",
+  "show",
+  "rev-parse",
+  "ls-files",
+  "ls-tree",
+]);
+
+function containsDisallowedGitCommand(command: string): boolean {
+  const gitInvocation = /\bgit(?:\s+([a-zA-Z0-9_-]+))?/gi;
+  let match;
+
+  while ((match = gitInvocation.exec(command)) !== null) {
+    const subcommand = match[1];
+
+    if (!subcommand) {
+      return true;
+    }
+
+    if (subcommand.toLowerCase() === "remote") {
+      const afterSubcommand = command.slice(match.index + match[0].length);
+
+      if (/^\s+-v(?=\s*(?:$|&&|\|\||;|\|))/i.test(afterSubcommand)) {
+        continue;
+      }
+
+      return true;
+    }
+
+    if (ALLOWED_GIT_SUBCOMMANDS.has(subcommand.toLowerCase())) {
+      continue;
+    }
+
+    return true;
+  }
+
+  return false;
+}
 
 function normalizePath(path: string): string {
   return path.replace(/\\/g, "/");
@@ -35,10 +57,6 @@ function isProtectedPath(path: string): boolean {
     normalized.startsWith(`${PROTECTED_PATH}/`) ||
     normalized.includes(`/${PROTECTED_PATH}/`)
   );
-}
-
-function containsBlockedGitCommand(command: string): boolean {
-  return BLOCKED_GIT_COMMANDS.some((pattern) => pattern.test(command));
 }
 
 function bashTouchesProtectedPath(command: string): boolean {
@@ -130,15 +148,14 @@ export default function safety(pi: ExtensionAPI) {
     if (isToolCallEventType("bash", event)) {
       const command = event.input.command;
 
-      if (containsBlockedGitCommand(command)) {
-        ctx.ui.notify(`Blocked Git write operation:\n${command}`, "warning");
+      if (containsDisallowedGitCommand(command)) {
+        ctx.ui.notify(`Blocked Git operation:\n${command}`, "warning");
 
         recordGuardrailBlock({
           guardrail: "safety",
           category: "git_write",
           reason:
-            "Git write/history operations are human-controlled. " +
-            "Use read-only commands such as git status, git diff, git log, or git show.",
+            "Git operations are human-controlled except for explicitly allowed read-only commands.",
           tool: event.toolName,
           toolCallId: event.toolCallId,
           input: { command },
@@ -147,8 +164,7 @@ export default function safety(pi: ExtensionAPI) {
         return {
           block: true,
           reason:
-            "Git write/history operations are human-controlled. " +
-            "Use read-only commands such as git status, git diff, git log, or git show.",
+            "Git operations are human-controlled except for explicitly allowed read-only commands.",
         };
       }
 
