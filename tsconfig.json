@@ -12,6 +12,7 @@
   "include": [
     ".pi/extensions/**/*.ts",
     ".pi/lib/**/*.ts",
-    "evals/**/*.ts"
+    "evals/**/*.ts",
+    "src/**/*.ts"
   ]
 }
