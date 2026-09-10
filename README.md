@@ -20,32 +20,118 @@ Key components:
     - `review.md` and `debug.md` — code review and debugging workflows.
   - `extensions/` — safety extensions:
     - `audit.ts` — records every tool call to `.pi/audit/tool-calls.jsonl`,
-      stamping each event with `sessionBaseCommit`, the current Git HEAD
-      read by the harness itself;
-    - `safety.ts` — implements the `/plan` and `/execute` commands, read-only
-      plan mode, blocking of Git write operations, protection of the
-      `.pi/extensions` directory itself, and bash command guardrails
-      (allowlist/denylist).
+      stamping each event with `sessionBaseCommit`, `runId`, and
+      `schemaVersion`;
+    - `safety.ts` — blocks Git write operations, protects the
+      `.pi/extensions` directory itself, and enforces bash command guardrails
+      (allowlist/denylist);
+    - `plan-mode.ts` — implements the `/plan` and `/execute` commands and
+      manages read-only plan mode plus plan/execute workflow state.
   - `skills/` — placeholder for custom skills.
   - `lib/` — shared harness modules:
     - `audit.ts` — the shared audit writer: appends entries to
       `.pi/audit/tool-calls.jsonl`, stamping each entry with
-      `sessionBaseCommit`, and provides `recordGuardrailBlock` so guardrail
-      extensions record their block decisions as audit facts.
-- `evals/` — session evaluation of agent behavior:
-  - `session-eval.ts` — reads the audit log (`.pi/audit/tool-calls.jsonl`),
-    groups events into sessions by `sessionBaseCommit`, and computes
-    per-session metrics: read-before-edit ratio, `git status` / `git diff`
-    checks, test and typecheck execution and pass status, tool errors,
-    counts of files read, files changed, and bash invocations, and
-    guardrail block metrics (`blockedAttempts`, `gitMutationAttempts`,
-    `protectedPathAttempts`, `planModeBlocks`).
-  - `results/session-evals.jsonl` — generated output: one JSON object per
-    evaluated session.
-- `src/`, `tests/`, `scripts/`, `docs/` — placeholder directories to
-  be filled in with the actual project code.
+      `sessionBaseCommit`, `runId`, and `schemaVersion`; provides
+      `recordGuardrailBlock` so guardrail extensions record their block
+      decisions as audit facts; and manages run state via
+      `readActiveRunState`/`writeActiveRunState` and lifecycle events.
+  - `audit/run.json` — runtime state for the current Run (mutable, overwritten
+    each Run).
+- `evals/` — run evaluation of agent behavior:
+  - `run-eval.ts` — reads the audit log (`.pi/audit/tool-calls.jsonl`),
+    groups V1 events by `runId` (legacy pre-V1 events by `sessionBaseCommit`),
+    derives phase boundaries from lifecycle events,
+    and computes per-run metrics: read-before-edit ratio, test and typecheck
+    status (not booleans), tool error counts, files read/changed, bash
+    invocations, guardrail block metrics, phase-specific metrics, and
+    consecutive max errors.
+  - `results/run-evals.jsonl` — generated output: one JSON object per
+    evaluated Run, with `schemaVersion` and `evaluatorVersion` for compatibility.
+- `src/models.ts` — TypeScript definitions for the data model:
+  `AuditEntry`, `RunEval`, version constants.
+- `tests/`, `scripts/`, `docs/` — test suite and other utilities.
 
-Safety model:
+## Data model and lifecycle
+
+### Run lifecycle
+
+A **Run** represents one model attempting one task, from planning through
+execution. A Run normally starts with `/plan`, but direct `/execute` can also
+start a new Run when there is no active Run:
+
+```
+/plan <Task X>              → new Run (run_start + phase_change("plan"))
+├── PLAN phase              → read-only tool calls
+├── /execute <Task X>       → phase_change("execute"); same runId
+└── EXECUTE phase           → read/write tool calls
+    └── agent_settled       → run_complete
+
+/execute <Task Y> with no active Run
+    → new Run (run_start + phase_change("execute"))
+```
+
+A Run is **abandoned** when a new Run starts before completion (a newer
+`run_start` event occurs before this Run's `run_complete`).
+A Run is **active** when it has started but not yet completed or abandoned.
+
+### Run identity
+
+Each Run has a unique `runId` (UUID). A Run normally starts with `/plan`,
+which generates a new `runId`. `/execute` preserves the active Run's `runId`.
+Direct `/execute` creates a new Run and `runId` when there is no active Run
+(or after the active Run completed). A new `/plan` also starts a new Run.
+
+`sessionBaseCommit` (Git HEAD at event time) is metadata, not identity.
+Multiple Runs from the same base commit are independently identifiable.
+
+### Audit log (raw telemetry)
+
+`.pi/audit/tool-calls.jsonl` contains one JSON object per event. Every entry
+is stamped with:
+
+- `runId` — the Run identity (null when no active Run is recorded, which
+  includes legacy pre-V1 entries)
+- `schemaVersion` — always `"1"` for V1+ entries (null for legacy)
+- `sessionBaseCommit` — Git HEAD at event time
+
+Event types:
+- `tool_call` — every tool invocation (bash, read, write, edit, grep, etc.)
+- `tool_execution_end` — result of each tool execution (isError, result)
+- `guardrail_block` — each blocked action (guardrail, category, reason)
+- `run_start` — Run beginning (taskDescription)
+- `phase_change` — phase transition (phase: "plan" | "execute")
+- `run_complete` — Run completion
+
+### Run evaluation output (derived metrics)
+
+`evals/results/run-evals.jsonl` contains one JSON object per Run with:
+
+- **Metadata**: `schemaVersion`, `evaluatorVersion`, `runId`, `baseCommit`,
+  `taskDescription`, `model`, `status`
+- **Timing**: `runStart`, `runEnd`, `runDurationMs`, `planPhaseDurationMs`,
+  `executePhaseDurationMs`
+- **Phase coverage**: `hasPlanPhase`, `hasExecutePhase`
+- **Per-run facts** (NOT rates): `testStatus` ("not_run" | "passed" | "failed"),
+  `typecheckStatus`, `gitStatusChecked`, `diffReviewed`, `readBeforeEdit`
+- **Counts**: `totalToolCalls`, `filesRead`, `filesChanged`, `bashCalls`,
+  `toolErrors`, `toolCallDistribution`, guardrail block counts
+- **Phase-specific**: `planPhaseToolCalls`, `executePhaseToolCalls`, etc.
+
+**Per-run facts vs. cross-run rates**: Individual Runs contain facts
+(`testStatus: "passed"`), not rates. Rates like `testPassRate` are computed
+by the dashboard layer across a set of Runs.
+
+### Versioning
+
+- **`schemaVersion`**: version of the raw telemetry schema. It identifies
+  which telemetry schema is associated with an evaluation output. Incremented
+  when `AuditEntry` structure changes.
+- **`evaluatorVersion`**: version of the metric definitions. It identifies
+  which metric semantics produced an evaluation. Incremented when `RunEval`
+  metric semantics change. Protects against silently comparing incompatible
+  metrics over time.
+
+### Safety model
 
 1. **Plan before editing.** `/plan <task>` switches the agent into read-only
    mode: only allowlisted inspection commands are permitted and file
@@ -58,11 +144,9 @@ Safety model:
    but never stages, commits, pushes, or rewrites history.
 4. **Everything is audited.** All tool calls are logged to
    `.pi/audit/tool-calls.jsonl`, which is ignored by Git. Every event also
-   carries `sessionBaseCommit`, the Git HEAD at the time of the event; since
-   the agent cannot commit, a change of that value in the log marks a
-   session boundary created by a human commit. Every guardrail block is
-   additionally recorded as an explicit `guardrail_block` entry carrying the
-   `guardrail` that decided, a stable machine-readable `category` (`git_write`,
-   `protected_path`, `plan_mode_tool`, `plan_mode_command`), and the
-   human-facing `reason`, so blocked attempts are measurable without
-   inferring them from a missing `tool_execution_end` event.
+   carries `sessionBaseCommit` (Git HEAD at event time), `runId` (Run identity),
+   and `schemaVersion`. Guardrail blocks are recorded as explicit
+   `guardrail_block` entries with `guardrail`, `category` (`git_write`,
+   `protected_path`, `plan_mode_tool`, `plan_mode_command`), and `reason`.
+   Lifecycle events (`run_start`, `phase_change`, `run_complete`) provide
+   explicit Run boundary markers.

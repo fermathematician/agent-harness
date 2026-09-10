@@ -1,6 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
-import { appendAudit } from "../lib/audit.ts";
+import {
+  appendAudit,
+  readActiveRunState,
+  appendLifecycleEvent,
+  writeActiveRunState,
+} from "../lib/audit.ts";
 
 export default function audit(pi: ExtensionAPI) {
   pi.on("tool_call", async (event) => {
@@ -68,5 +73,18 @@ export default function audit(pi: ExtensionAPI) {
       isError: event.isError,
       result: event.result,
     });
+  });
+
+  pi.on("agent_settled", async () => {
+    const state = readActiveRunState();
+
+    if (state && state.currentPhase === "execute" && !state.completedAt) {
+      writeActiveRunState({
+        ...state,
+        completedAt: new Date().toISOString(),
+      });
+
+      appendLifecycleEvent("run_complete", state.runId);
+    }
   });
 }

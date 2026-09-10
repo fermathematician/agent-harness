@@ -4,6 +4,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { recordGuardrailBlock } from "../lib/audit.ts";
 
+import { randomUUID } from "node:crypto";
+import {
+  writeActiveRunState,
+  appendLifecycleEvent,
+  readActiveRunState,
+} from "../lib/audit.ts";
+
 const PLAN_PROMPT_PATH = ".pi/prompts/plan-instructions.md";
 const EXECUTE_PROMPT_PATH = ".pi/prompts/execute-instructions.md";
 
@@ -196,6 +203,25 @@ export default function planMode(pi: ExtensionAPI) {
 
       const instructions = fs.readFileSync(promptPath, "utf8");
 
+      // Lifecycle telemetry
+      const runId = randomUUID();
+
+      writeActiveRunState({
+        runId,
+        task: args.trim(),
+        currentPhase: "plan",
+        startedAt: new Date().toISOString(),
+        completedAt: null,
+      });
+
+      appendLifecycleEvent("run_start", runId, {
+        taskDescription: args.trim(),
+      });
+
+      appendLifecycleEvent("phase_change", runId, {
+        phase: "plan",
+      });
+
       enablePlanMode();
 
       ctx.ui.setStatus("plan-mode", "⏸ plan");
@@ -232,6 +258,31 @@ export default function planMode(pi: ExtensionAPI) {
       }
 
       const instructions = fs.readFileSync(promptPath, "utf8");
+
+      // Lifecycle telemetry
+      const state = readActiveRunState();
+
+      const activeState = state && !state.completedAt ? state : null;
+      const runId = activeState?.runId ?? randomUUID();
+      const runTask = activeState?.task ?? task;
+
+      writeActiveRunState({
+        runId,
+        task: runTask,
+        currentPhase: "execute",
+        startedAt: activeState?.startedAt ?? new Date().toISOString(),
+        completedAt: null,
+      });
+
+      if (!activeState) {
+        appendLifecycleEvent("run_start", runId, {
+          taskDescription: runTask,
+        });
+      }
+
+      appendLifecycleEvent("phase_change", runId, {
+        phase: "execute",
+      });
 
       disablePlanMode();
 
