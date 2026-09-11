@@ -958,7 +958,7 @@ test("legacy entries are grouped by sessionBaseCommit, not all merged under null
   }
 });
 
-test("PLAN phase boundaries use first phase_change(plan) to first phase_change(execute)", async () => {
+test("PLAN duration measures agent activity ending at the last PLAN activity", async () => {
   const workdir = createWorkdir({ withGit: true });
   const previousCwd = process.cwd();
   process.chdir(workdir);
@@ -1038,8 +1038,8 @@ test("PLAN phase boundaries use first phase_change(plan) to first phase_change(e
     assert.equal(run.hasExecutePhase, true);
     assert.equal(
       run.planPhaseDurationMs,
-      9000,
-      `planPhaseDurationMs should be 9000ms (00:00:10 execute - 00:00:01 plan), got ${run.planPhaseDurationMs}ms`,
+      4000,
+      `planPhaseDurationMs should be 4000ms (00:00:05 last PLAN activity - 00:00:01 plan), got ${run.planPhaseDurationMs}ms`,
     );
     assert.equal(
       run.executePhaseDurationMs,
@@ -1139,13 +1139,103 @@ test("PLAN tool calls belong to PLAN when EXECUTE has not started", async () => 
     );
     assert.equal(
       run.planPhaseDurationMs,
-      null,
-      "planPhaseDurationMs should be null when EXECUTE has not started",
+      3000,
+      "planPhaseDurationMs should be 3000ms (00:00:04 last PLAN activity - 00:00:01 plan) when EXECUTE has not started",
     );
   } finally {
     process.chdir(previousCwd);
     fs.rmSync(workdir, { recursive: true, force: true });
   }
+});
+
+test("PLAN duration excludes human idle time before /execute", () => {
+  const evals = evaluateAuditEntries([
+    { event: "run_start", timestamp: "2024-01-01T00:00:00.000Z", runId: "idle-run", schemaVersion: "1", taskDescription: "idle", sessionBaseCommit: "abc123" },
+    { event: "phase_change", timestamp: "2024-01-01T00:00:01.000Z", runId: "idle-run", schemaVersion: "1", phase: "plan", sessionBaseCommit: "abc123" },
+    { event: "tool_call", timestamp: "2024-01-01T00:00:02.000Z", runId: "idle-run", schemaVersion: "1", tool: "read", toolCallId: "read-1", input: { path: "README.md" }, sessionBaseCommit: "abc123" },
+    { event: "tool_execution_end", timestamp: "2024-01-01T00:00:52.000Z", runId: "idle-run", schemaVersion: "1", tool: "read", toolCallId: "read-1", isError: false, sessionBaseCommit: "abc123" },
+    { event: "phase_change", timestamp: "2024-01-01T00:10:00.000Z", runId: "idle-run", schemaVersion: "1", phase: "execute", sessionBaseCommit: "abc123" },
+    { event: "tool_call", timestamp: "2024-01-01T00:10:02.000Z", runId: "idle-run", schemaVersion: "1", tool: "write", toolCallId: "write-1", input: { path: "src/main.ts" }, sessionBaseCommit: "abc123" },
+    { event: "tool_execution_end", timestamp: "2024-01-01T00:10:51.000Z", runId: "idle-run", schemaVersion: "1", tool: "write", toolCallId: "write-1", isError: false, sessionBaseCommit: "abc123" },
+    { event: "run_complete", timestamp: "2024-01-01T00:10:52.000Z", runId: "idle-run", schemaVersion: "1", sessionBaseCommit: "abc123" },
+  ]);
+
+  assert.equal(evals.length, 1);
+  const run = evals[0];
+  assert.equal(run.evaluatorVersion, "2");
+  assert.equal(run.status, "completed");
+  assert.equal(run.hasPlanPhase, true);
+  assert.equal(run.hasExecutePhase, true);
+  assert.equal(
+    run.planPhaseDurationMs,
+    51000,
+    `PLAN agent activity should be 51000ms (00:00:52 - 00:00:01), excluding ~9m human idle, got ${run.planPhaseDurationMs}ms`,
+  );
+  assert.equal(
+    run.executePhaseDurationMs,
+    52000,
+    `EXECUTE should be 52000ms (00:10:52 - 00:10:00), got ${run.executePhaseDurationMs}ms`,
+  );
+  assert.equal(
+    run.runDurationMs,
+    652000,
+    `Run wall-clock duration should remain 652000ms, got ${run.runDurationMs}ms`,
+  );
+});
+
+test("direct /execute Run has no PLAN phase and correct EXECUTE duration", () => {
+  const evals = evaluateAuditEntries([
+    { event: "run_start", timestamp: "2024-01-01T00:00:00.000Z", runId: "direct-exec", schemaVersion: "1", taskDescription: "direct", sessionBaseCommit: "abc123" },
+    { event: "phase_change", timestamp: "2024-01-01T00:00:01.000Z", runId: "direct-exec", schemaVersion: "1", phase: "execute", sessionBaseCommit: "abc123" },
+    { event: "tool_call", timestamp: "2024-01-01T00:00:05.000Z", runId: "direct-exec", schemaVersion: "1", tool: "write", toolCallId: "write-1", input: { path: "src/main.ts" }, sessionBaseCommit: "abc123" },
+    { event: "tool_execution_end", timestamp: "2024-01-01T00:00:49.000Z", runId: "direct-exec", schemaVersion: "1", tool: "write", toolCallId: "write-1", isError: false, sessionBaseCommit: "abc123" },
+    { event: "run_complete", timestamp: "2024-01-01T00:00:50.000Z", runId: "direct-exec", schemaVersion: "1", sessionBaseCommit: "abc123" },
+  ]);
+
+  assert.equal(evals.length, 1);
+  const run = evals[0];
+  assert.equal(run.hasPlanPhase, false);
+  assert.equal(run.planPhaseDurationMs, null);
+  assert.equal(run.planPhaseToolCalls, null);
+  assert.equal(run.hasExecutePhase, true);
+  assert.equal(run.executePhaseDurationMs, 49000);
+  assert.equal(run.executePhaseToolCalls, 1);
+  assert.equal(run.runDurationMs, 50000);
+});
+
+test("missing PLAN activity yields null plan duration (not zero)", () => {
+  const evals = evaluateAuditEntries([
+    { event: "run_start", timestamp: "2024-01-01T00:00:00.000Z", runId: "no-plan-activity", schemaVersion: "1", taskDescription: "no plan work", sessionBaseCommit: "abc123" },
+    { event: "phase_change", timestamp: "2024-01-01T00:00:01.000Z", runId: "no-plan-activity", schemaVersion: "1", phase: "plan", sessionBaseCommit: "abc123" },
+    { event: "phase_change", timestamp: "2024-01-01T00:00:05.000Z", runId: "no-plan-activity", schemaVersion: "1", phase: "execute", sessionBaseCommit: "abc123" },
+    { event: "run_complete", timestamp: "2024-01-01T00:00:10.000Z", runId: "no-plan-activity", schemaVersion: "1", sessionBaseCommit: "abc123" },
+  ]);
+
+  assert.equal(evals.length, 1);
+  const run = evals[0];
+  assert.equal(run.hasPlanPhase, true);
+  assert.equal(run.hasExecutePhase, true);
+  assert.equal(
+    run.planPhaseDurationMs,
+    null,
+    "planPhaseDurationMs should be null (not 0) when PLAN has no activity",
+  );
+  assert.equal(run.executePhaseDurationMs, 5000);
+});
+
+test("legacy records without lifecycle events have null phase durations", () => {
+  const evals = evaluateAuditEntries([
+    { event: "tool_call", timestamp: "2024-01-01T00:00:00.000Z", tool: "read", toolCallId: "read-1", input: { path: "README.md" }, sessionBaseCommit: "commit-legacy" },
+    { event: "tool_execution_end", timestamp: "2024-01-01T00:00:05.000Z", tool: "read", toolCallId: "read-1", isError: false, sessionBaseCommit: "commit-legacy" },
+  ]);
+
+  assert.equal(evals.length, 1);
+  const run = evals[0];
+  assert.equal(run.runId, null);
+  assert.equal(run.hasPlanPhase, false);
+  assert.equal(run.hasExecutePhase, false);
+  assert.equal(run.planPhaseDurationMs, null);
+  assert.equal(run.executePhaseDurationMs, null);
 });
 
 test("testStatus uses the last completed matching invocation: FAIL then PASS → passed", async () => {

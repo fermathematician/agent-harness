@@ -171,6 +171,49 @@ function isPhaseEvent(
 }
 
 /**
+ * Events that represent actual agent work. The timestamp of the latest such
+ * event within a phase marks when the agent stopped working in that phase.
+ */
+const ACTIVITY_EVENTS = new Set([
+  "tool_call",
+  "tool_execution_end",
+  "guardrail_block",
+]);
+
+/**
+ * Find the timestamp of the last agent-activity event in [fromMs, toMs).
+ * `toMs === null` means there is no upper bound (the phase is still active).
+ * Returns null when there is no activity in the window.
+ */
+function lastActivityMs(
+  entries: AuditEntry[],
+  fromMs: number,
+  toMs: number | null,
+): number | null {
+  let last: number | null = null;
+
+  for (const entry of entries) {
+    if (!ACTIVITY_EVENTS.has(entry.event)) {
+      continue;
+    }
+
+    const ts = new Date(entry.timestamp).getTime();
+    if (ts < fromMs) {
+      continue;
+    }
+    if (toMs !== null && ts >= toMs) {
+      continue;
+    }
+
+    if (last === null || ts > last) {
+      last = ts;
+    }
+  }
+
+  return last;
+}
+
+/**
  * Determine the status of a Run.
  *
  * A Run is:
@@ -435,21 +478,34 @@ function evaluateRun(
   const runEnd = timingEndMs;
   const runDurationMs = runEnd - runStart;
 
+  // Phase durations measure agent activity, not lifecycle wall-clock spans.
+  //
+  // PLAN ends at the last activity event before EXECUTE starts, so human idle
+  // time between the end of PLAN work and `/execute` is excluded.
+  //
+  // EXECUTE ends at run_complete (emitted on agent_settled), which already
+  // marks the true end of agent work, so it is unchanged.
   let planPhaseDurationMs: number | null = null;
   let executePhaseDurationMs: number | null = null;
 
-  if (
-    phaseBoundaries.planStartMs !== null &&
-    phaseBoundaries.planEndMs !== null
-  ) {
-    planPhaseDurationMs = phaseBoundaries.planEndMs - phaseBoundaries.planStartMs;
+  if (phaseBoundaries.planStartMs !== null) {
+    const planLastActivity = lastActivityMs(
+      entries,
+      phaseBoundaries.planStartMs,
+      phaseBoundaries.executeStartMs,
+    );
+
+    if (planLastActivity !== null) {
+      planPhaseDurationMs = planLastActivity - phaseBoundaries.planStartMs;
+    }
   }
 
   if (
     phaseBoundaries.executeStartMs !== null &&
     phaseBoundaries.executeEndMs !== null
   ) {
-    executePhaseDurationMs = phaseBoundaries.executeEndMs - phaseBoundaries.executeStartMs;
+    executePhaseDurationMs =
+      phaseBoundaries.executeEndMs - phaseBoundaries.executeStartMs;
   }
 
   // Status determination

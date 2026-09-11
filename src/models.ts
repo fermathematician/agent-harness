@@ -20,7 +20,7 @@ export const SCHEMA_VERSION = "1";
  * Version of the evaluator/metric definitions.
  * Increment when RunEval metric semantics change.
  */
-export const EVALUATOR_VERSION = "1";
+export const EVALUATOR_VERSION = "2";
 
 // ──────────────────────────────────────────────
 // Run lifecycle states
@@ -136,10 +136,19 @@ export interface RunEval {
   /** Duration in milliseconds from runStart to runEnd. */
   runDurationMs: number;
 
-  /** Duration in ms from plan phase start to execute phase start. Null if no execute phase. */
+  /**
+   * Agent activity during PLAN: from phase_change("plan") to the last
+   * activity event (tool_call / tool_execution_end / guardrail_block) before
+   * EXECUTE. Excludes human idle time before /execute. Null if there is no
+   * PLAN phase or no PLAN activity.
+   */
   planPhaseDurationMs: number | null;
 
-  /** Duration in ms from execute phase start to run_complete. Null if no execute phase or not completed. */
+  /**
+   * Agent activity during EXECUTE: from phase_change("execute") to
+   * run_complete (emitted on agent_settled). Null if there is no EXECUTE
+   * phase or the Run is not completed.
+   */
   executePhaseDurationMs: number | null;
 
   // ── Phase coverage ──
