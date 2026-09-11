@@ -2,746 +2,298 @@
 
 ## Purpose
 
-A Controller is the HTTP boundary of the application.
+A Controller is the HTTP boundary of one application use case.
 
-Its responsibility is to receive an HTTP request, extract the required input, call the appropriate Service, and translate the Service result into an HTTP response.
+Its flow is:
 
-A Controller should remain thin.
+```text
+HTTP request
+  ↓
+extract validated input
+  ↓
+call Service
+  ↓
+return HTTP response
+```
 
-It should understand HTTP, but not business rules or persistence details.
+Controllers handle transport concerns only.
+
+Business rules belong to Services.
+
+Persistence belongs to Repositories.
 
 ## Structure
 
-Prefer explicit Controller classes with a single public entry point.
+Prefer one Controller per use case.
 
-Example:
+Use `handle()` as the standard entry point.
 
-    export class CreateUserController {
-      constructor(
-        private readonly createUserService: CreateUserService,
-      ) {}
+```ts
+export class CreateUserController {
+  constructor(private readonly createUserService: CreateUserService) {}
 
-      async handle(
-        request: Request,
-        response: Response,
-      ): Promise<Response> {
-        const { name, email } = request.body;
-
-        const user =
-          await this.createUserService.execute({
-            name,
-            email,
-          });
-
-        return response.status(201).json(user);
-      }
-    }
-
-Use a predictable entry point such as:
-
-    handle()
-
-This keeps Controllers consistent across the project.
-
-## Responsibilities
-
-A Controller may:
-
-- read route parameters;
-- read query parameters;
-- read request body data;
-- read authenticated-user context;
-- call a Service;
-- choose the appropriate success HTTP status;
-- return JSON or another HTTP representation;
-- set response headers when required.
-
-Keep these responsibilities focused on transport concerns.
-
-## Request extraction
-
-Extract only the fields required by the use case.
-
-Example:
-
+  async handle(request: Request, response: Response): Promise<Response> {
     const { name, email } = request.body;
 
-    const user =
-      await this.createUserService.execute({
-        name,
-        email,
-      });
+    const user = await this.createUserService.execute({
+      name,
+      email,
+    });
 
-Avoid forwarding the entire HTTP request object.
+    return response.status(201).json(user);
+  }
+}
+```
 
-Do not do:
+Keep the convention:
 
-    service.execute(request);
+```text
+Controller.handle()
+  ↓
+Service.execute()
+```
 
-The Service should receive an application-specific input object, not Express infrastructure.
+## Dependencies
 
-## Route parameters
+Inject the required Service through the constructor.
 
-Convert route parameters into the type expected by the Service when necessary.
+Do not instantiate Services inside `handle()`.
 
-Example:
+A Controller should normally depend on one cohesive Service for the HTTP action.
 
-    const userId = request.params.userId;
+Do not use Controllers to orchestrate unrelated Services.
 
-    const user =
-      await this.getUserService.execute({
-        userId,
-      });
+## Input
 
-If a route parameter requires structural parsing or validation, perform that before invoking the Service according to the project's validation convention.
+Convert HTTP input into explicit application input.
 
-## Query parameters
+Allowed sources include:
 
-Translate HTTP query parameters into explicit Service input.
+```text
+request.body
+request.params
+request.query
+authenticated request context
+```
 
-Example:
-
-    const page =
-      Number(request.query.page ?? 1);
-
-    const pageSize =
-      Number(request.query.pageSize ?? 20);
-
-    const result =
-      await this.listUsersService.execute({
-        page,
-        pageSize,
-      });
-
-Do not let raw Express query objects leak into the Service.
-
-## Request body
-
-Do not pass arbitrary request bodies through the application unchanged.
-
-Avoid:
-
-    service.execute(request.body);
-
-when the Service expects a well-defined input shape.
+Extract only what the Service requires.
 
 Prefer:
 
-    const {
-      name,
-      email,
-      age,
-    } = request.body;
+```ts
+await service.execute({
+  userId,
+  email,
+});
+```
 
-    return service.execute({
-      name,
-      email,
-      age,
-    });
+Do not pass:
 
-This makes the boundary explicit.
+```ts
+service.execute(request);
+service.execute(request.body);
+service.execute(request.query);
+```
+
+unless the application input intentionally has that exact validated shape.
+
+Express-specific objects must not leak into Services.
+
+## Validation
+
+Follow the project validation convention before invoking the Service.
+
+Structural validation includes:
+
+```text
+request shape
+required fields
+primitive types
+formats
+route params
+query parsing
+```
+
+Business validation does not belong in the Controller.
+
+Do not check:
+
+```text
+duplicate resources
+resource permissions
+business eligibility
+balance or stock rules
+valid state transitions
+```
+
+Those belong to the Service.
 
 ## Authentication context
 
-When authentication middleware attaches user information to the request, extract only the application-relevant values.
+If authentication middleware adds identity information to the request, extract only application-relevant values.
 
 Example:
 
-    const authenticatedUserId =
-      request.user.id;
+```ts
+await service.execute({
+  authenticatedUserId: request.user.id,
+});
+```
 
-    await this.updateProfileService.execute({
-      authenticatedUserId,
-      name,
-    });
+Do not pass token, session, middleware, or request infrastructure into the Service.
 
-Do not pass authentication middleware objects or session infrastructure directly into the Service.
+## Success response
 
-## Success responses
+The Controller owns the successful HTTP representation.
 
-Controllers define the HTTP representation of successful use cases.
+It may choose:
 
-Common conventions:
-
-### Creation
-
-Use:
-
-    201 Created
-
-Example:
-
-    return response.status(201).json(user);
-
-### Successful retrieval
-
-Use:
-
-    200 OK
+```text
+status code
+response body
+headers
+cookies
+redirects
+file/stream representation
+```
 
 Example:
 
-    return response.status(200).json(user);
+```ts
+const user = await this.createUserService.execute({
+  name,
+  email,
+});
 
-### Successful update
+return response.status(201).json(user);
+```
 
-Use:
+Here:
 
-    200 OK
+```text
+Service
+→ returns the created user
 
-when returning the updated resource.
+Controller
+→ translates success into HTTP 201 + JSON
+```
 
-Example:
+The Service must not return HTTP-specific data such as:
 
-    return response.status(200).json(user);
+```ts
+{
+  statusCode: 201,
+  body: user,
+}
+```
 
-Use:
+Use the HTTP status appropriate to the endpoint semantics.
 
-    204 No Content
+## Response data
 
-when the operation succeeds and intentionally returns no response body.
+Return an intentional public response shape.
 
-### Successful deletion
+Do not expose sensitive or internal persistence fields accidentally.
 
-Prefer:
+When response transformation is required, follow the project's Presenter or Response DTO convention.
 
-    204 No Content
-
-when nothing needs to be returned.
-
-Example:
-
-    return response.status(204).send();
-
-Choose the status code according to the HTTP semantics of the endpoint.
-
-## Response shape
-
-Return intentional response shapes.
-
-Example:
-
-    return response.status(200).json({
-      user,
-    });
-
-or:
-
-    return response.status(200).json(user);
-
-Follow the project's API response convention consistently.
-
-Do not expose internal implementation details unintentionally.
-
-Never expose sensitive or unnecessary internal fields.
-
-Do not serialize persistence objects blindly when they may contain fields that are not part of the public API.
-
-When response transformation or sanitization is required, use the project's Response DTO / Presenter convention.
-
-Response shaping should remain explicit at the HTTP boundary.
+Do not turn the Controller into a large response-mapping layer.
 
 ## Errors
 
-Do not catch every Service error inside Controllers.
+Do not catch every Service error.
 
-Avoid:
+Expected `AppError` failures must propagate to the global error middleware.
 
-    try {
-      const user =
-        await service.execute(input);
+Unexpected errors should also normally propagate.
 
-      return response.json(user);
-    } catch (error) {
-      if (error instanceof AppError) {
-        return response
-          .status(error.statusCode)
-          .json({
-            error: error.message,
-          });
-      }
+Catch an error inside a Controller only when transport-specific handling is intentionally required.
 
-      return response
-        .status(500)
-        .json({
-          error: "Internal server error",
-        });
-    }
+Do not duplicate global error handling in every Controller.
 
-Expected application errors should propagate to the global error middleware.
+## Persistence boundary
 
-Prefer:
+Controllers must not:
 
-    const user =
-      await service.execute(input);
+```text
+access Prisma
+query the database
+call Repository methods directly
+```
 
-    return response
-      .status(201)
-      .json(user);
+All application persistence must be reached through the Service.
 
-The global error handler is responsible for translating `AppError` into an HTTP error response.
+## Transport boundary
 
-A Controller should catch an error only when it has a concrete transport-specific reason to do so.
-
-## Business rules
-
-Do not implement business decisions in Controllers.
-
-Avoid:
-
-    const existingUser =
-      await userRepository.findByEmail(email);
-
-    if (existingUser) {
-      throw new AppError(
-        "Email already exists",
-        409,
-      );
-    }
-
-This is application behavior, not HTTP behavior.
-
-The Controller should only provide the Service with the required input.
-
-## Persistence
-
-Controllers should not perform persistence operations.
-
-Do not call Prisma or database APIs from a Controller.
-
-Avoid:
-
-    await prisma.user.create(...);
-
-The Controller should communicate through the use case exposed by the Service.
-
-## Structural validation
-
-Controllers may participate in transport-level validation according to the project's validation strategy.
-
-Examples:
-
-- parsing route parameters;
-- validating request shape;
-- validating primitive types;
-- applying request schemas.
-
-Prefer dedicated schema validation middleware or schema parsers when available.
-
-Example:
-
-    const data =
-      createUserSchema.parse(
-        request.body,
-      );
-
-    const user =
-      await this.createUserService.execute(
-        data,
-      );
-
-Do not duplicate business validation that already belongs to the Service.
-
-Structural validation should answer questions such as:
-
-- is the required field present?
-- is the value the expected primitive type?
-- does the request match the expected shape?
-- can the route or query parameter be parsed correctly?
-
-It should not answer business questions such as:
-
-- is this email already registered?
-- is this user allowed to perform the operation?
-- can this order be cancelled?
-- does this account have enough balance?
-
-Those decisions belong to the application use case.
-
-## Headers
-
-Set HTTP headers when the endpoint semantics require them.
-
-Example:
-
-    response.setHeader(
-      "Location",
-      `/users/${user.id}`,
-    );
-
-    return response
-      .status(201)
-      .json(user);
-
-Do not place infrastructure-independent business behavior in header-handling logic.
-
-## Redirects
-
-When the API or application legitimately uses redirects, Controllers may return the appropriate HTTP redirect response.
-
-Example:
-
-    return response.redirect(
-      302,
-      destination,
-    );
-
-Redirect behavior is a transport concern.
-
-## File and stream responses
-
-When a use case returns data intended for a file or stream response, the Controller translates it into HTTP semantics.
-
-Example concerns include:
-
-- `Content-Type`;
-- `Content-Disposition`;
-- stream piping;
-- download filename.
-
-The underlying business decision should remain outside the Controller.
-
-For example, the Service may determine which report the user is allowed to export, while the Controller determines how that report is represented as an HTTP download.
-
-## Keep Controllers thin
-
-A Controller should usually be easy to read from top to bottom.
-
-Typical flow:
-
-    extract input
-        ↓
-    call Service
-        ↓
-    return HTTP response
-
-Example:
-
-    async handle(
-      request: Request,
-      response: Response,
-    ) {
-      const { userId } =
-        request.params;
-
-      const user =
-        await this.getUserService.execute({
-          userId,
-        });
-
-      return response
-        .status(200)
-        .json(user);
-    }
-
-If a Controller contains substantial conditional logic, persistence operations, or application decisions, reconsider whether that logic belongs elsewhere.
-
-Thin does not mean that a Controller must contain the minimum possible number of lines.
-
-It means that its logic should remain focused on the HTTP boundary.
-
-Input extraction, parsing, response status selection, headers, and serialization are legitimate Controller responsibilities.
-
-Business decisions are not.
-
-## Naming conventions
-
-Name Controllers after the use case or endpoint action they expose.
-
-Prefer:
-
-- `CreateUserController`
-- `GetUserController`
-- `ListUsersController`
-- `UpdateUserController`
-- `DeleteUserController`
-- `DeactivateUserController`
-
-Avoid large generic Controllers such as:
-
-    UserController {
-      create()
-      update()
-      delete()
-      deactivate()
-      ...
-    }
-
-when the project architecture uses one use case per class.
-
-Use:
-
-    handle()
-
-as the standard public Controller entry point.
-
-This creates symmetry with the Service convention:
-
-    Controller.handle()
-        ↓
-    Service.execute()
-
-Do not vary equivalent entry-point names arbitrarily.
-
-Avoid mixing:
-
-    handle()
-    run()
-    execute()
-    process()
-    create()
-
-for Controllers that perform the same architectural role.
-
-Standardize Controller entry points on:
-
-    handle()
-
-## Dependency injection
-
-Receive the required Service through the Controller constructor.
-
-Example:
-
-    export class CreateUserController {
-      constructor(
-        private readonly createUserService: CreateUserService,
-      ) {}
-
-      async handle(
-        request: Request,
-        response: Response,
-      ): Promise<Response> {
-        ...
-      }
-    }
-
-Do not instantiate the Service inside `handle()`.
-
-Avoid:
-
-    async handle(request, response) {
-      const service =
-        new CreateUserService(...);
-
-      ...
-    }
-
-The Controller should receive its dependencies already constructed.
-
-This keeps dependency construction separate from request handling and makes the Controller easier to test.
-
-## Controller dependencies
-
-A Controller should normally depend on the Service required by its HTTP action.
-
-Keep dependencies explicit.
-
-Example:
-
-    constructor(
-      private readonly updateUserService: UpdateUserService,
-    ) {}
-
-If a Controller starts requiring many unrelated application dependencies, reconsider whether the HTTP action is coordinating responsibilities that should be represented by a single use case.
-
-Do not use the Controller as an orchestration layer for several independent Services merely because it has access to the HTTP request.
-
-The application use case should provide the cohesive operation required by the endpoint.
-
-## Return type
-
-When using Express, prefer an explicit return type consistent with the project's TypeScript configuration.
-
-Example:
-
-    async handle(
-      request: Request,
-      response: Response,
-    ): Promise<Response> {
-      ...
-    }
-
-If the Controller intentionally finishes the response without returning a body, adapt the type consistently rather than mixing conventions arbitrarily.
-
-Do not vary Controller return conventions without a concrete reason.
-
-## HTTP status ownership
-
-The Controller owns the successful HTTP representation of the use case.
-
-The Service should not return HTTP status codes.
-
-Avoid Service results such as:
-
-    return {
-      statusCode: 201,
-      user,
-    };
-
-Prefer:
-
-    const user =
-      await service.execute(input);
-
-and let the Controller decide:
-
-    return response
-      .status(201)
-      .json(user);
-
-Application failures represented by `AppError` are translated into HTTP errors by the global error middleware according to the project's error convention.
-
-This keeps successful HTTP representation in the Controller while centralizing error translation.
-
-## Transport-specific transformations
-
-The Controller may perform transformations that exist specifically because of HTTP.
-
-Examples:
-
-    const page =
-      Number(request.query.page);
-
-    const active =
-      request.query.active === "true";
-
-    const userId =
-      request.params.userId;
-
-These transformations convert transport representation into application input.
-
-Avoid transformations that encode business meaning.
-
-For example, this belongs outside the Controller:
-
-    const discount =
-      user.vip
-        ? total * 0.2
-        : 0;
-
-The distinction is:
-
-    HTTP representation
-        → Controller transformation
-        → application input
-
-not:
-
-    business state
-        → Controller decision
-        → business result
-
-## Avoid leaking Express
-
-Treat Express as an adapter at the HTTP boundary.
+Express belongs at the HTTP boundary.
 
 Types such as:
 
-- `Request`;
-- `Response`;
-- `NextFunction`;
+```ts
+Request;
+Response;
+NextFunction;
+```
 
-should remain within HTTP infrastructure.
+must not appear in Services or Repositories.
 
-Do not make Services depend on Express types.
+HTTP-specific transformations are allowed in Controllers when they merely convert transport representation into application input.
 
-Avoid:
+Do not perform transformations that encode business decisions.
 
-    execute(request: Request)
+## Naming
 
 Prefer:
 
-    execute(input: CreateUserRequest)
+```text
+CreateUserController
+GetUserController
+ListUsersController
+UpdateUserController
+DeleteUserController
+DeactivateUserController
+```
 
-This allows the application use case to remain independent from the HTTP framework.
+Avoid generic Controllers with many unrelated action methods.
 
-## Testing considerations
+Use `handle()` consistently.
 
-Controllers should be testable primarily as HTTP-boundary adapters.
+## Keep Controllers thin
 
-Useful Controller tests may verify:
+A Controller should normally read as:
 
-- correct extraction of request data;
-- correct Service input;
-- correct success status code;
-- correct response body;
-- correct headers when applicable;
-- correct parsing of route and query parameters.
+```text
+extract input
+  ↓
+call Service
+  ↓
+return response
+```
 
-Do not duplicate Service business-rule tests at the Controller level.
+Thin means focused on HTTP concerns, not a specific number of lines.
 
-For example, the Service test should verify that duplicate emails are rejected.
-
-The Controller test only needs to verify that it passes the correct email to the Service and returns the successful HTTP representation when the Service succeeds.
-
-Error middleware behavior should be tested according to the global error-handling convention rather than reproduced independently in every Controller test.
-
-## Example
-
-A complete Controller should remain conceptually simple.
-
-    export class CreateUserController {
-      constructor(
-        private readonly createUserService: CreateUserService,
-      ) {}
-
-      async handle(
-        request: Request,
-        response: Response,
-      ): Promise<Response> {
-        const {
-          name,
-          email,
-        } = request.body;
-
-        const user =
-          await this.createUserService.execute({
-            name,
-            email,
-          });
-
-        return response
-          .status(201)
-          .json(user);
-      }
-    }
-
-The important properties are not the number of lines.
-
-The important properties are:
-
-- HTTP input is handled here;
-- application input is explicit;
-- the Service represents the use case;
-- successful HTTP representation is handled here;
-- business logic is absent;
-- persistence logic is absent;
-- infrastructure details do not leak into the Service.
+If the Controller contains business conditionals, persistence logic, or significant application orchestration, move that logic to the appropriate layer.
 
 ## Rules
 
-When implementing a Controller:
-
-- represent one HTTP-facing action;
-- keep the Controller focused on the HTTP boundary;
-- use a consistent `handle()` entry point;
-- receive required Services through constructor injection;
-- extract only the data required by the Service;
-- convert HTTP-specific input into application-specific input;
-- do not pass Express `Request` objects into Services;
-- call the appropriate Service;
-- choose the correct success HTTP status;
-- return an intentional response shape;
-- use the project's Response DTO / Presenter convention when response transformation is required;
-- keep HTTP semantics inside the Controller;
-- let expected `AppError` failures propagate to the global error middleware;
-- avoid broad `try/catch` blocks around every Service call;
-- do not implement business rules;
-- do not perform persistence operations;
-- do not call Prisma;
-- do not use the Controller to coordinate unrelated application operations;
-- do not expose sensitive or unnecessary internal data;
-- keep Express-specific types at the HTTP boundary;
-- test Controller transport behavior without duplicating Service business-rule tests;
-- prefer one Controller per use case when using the project's use-case-oriented architecture.
+- One Controller represents one HTTP-facing use case.
+- Use `handle()` consistently.
+- Inject the required Service.
+- Do not instantiate Services inside the Controller.
+- Extract only input required by the Service.
+- Convert HTTP input into application-specific input.
+- Never pass Express infrastructure into Services.
+- Follow the validation convention for structural input.
+- Keep business validation in Services.
+- Extract authenticated identity as application data only.
+- Let the Controller own successful HTTP representation.
+- Do not let Services return HTTP-specific results.
+- Let `AppError` propagate to the global error middleware.
+- Do not duplicate error handling across Controllers.
+- Never access Prisma from a Controller.
+- Never call Repositories directly from a Controller.
+- Do not orchestrate unrelated Services in a Controller.
+- Do not expose sensitive or unnecessary internal data.
+- Use Presenter / Response DTO conventions when transformation is required.
+- Keep Express-specific types inside the HTTP layer.
+- Keep `handle()` readable and transport-focused.

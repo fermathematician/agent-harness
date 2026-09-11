@@ -2,228 +2,145 @@
 
 ## Purpose
 
-Use `AppError` for expected application errors that must be translated into HTTP responses.
+Use `AppError` for expected application failures that should become HTTP error responses.
 
-`AppError` represents an error that the application understands and intentionally exposes through an HTTP status code.
+Do not convert unexpected errors into `AppError`.
 
-Unexpected errors must not be converted into `AppError` just to hide failures.
+## Implementation
 
-## AppError implementation
+Use:
 
-Use the following structure:
+```ts
+export class AppError extends Error {
+  public readonly statusCode: number;
 
-    export class AppError extends Error {
-      public readonly statusCode: number;
+  constructor(message: string, statusCode = 400) {
+    super(message);
 
-      constructor(message: string, statusCode = 400) {
-        super(message);
+    this.name = "AppError";
+    this.statusCode = statusCode;
+  }
+}
+```
 
-        this.name = "AppError";
-        this.statusCode = statusCode;
-      }
-    }
+Do not add additional fields unless the task or existing project architecture requires them.
 
-Keep the implementation simple.
+## Usage
 
-An `AppError` contains:
+Throw `AppError` where the expected application failure is detected, normally in the Service.
 
-- `message`: human-readable description of the error
-- `statusCode`: HTTP status returned to the client
+```ts
+const user = await userRepository.findById(id);
 
-The default status code is `400`.
+if (!user) {
+  throw new AppError("User not found", 404);
+}
+```
 
-## Where AppError is thrown
+```ts
+const existingUser = await userRepository.findByEmail(email);
 
-Business/application services are responsible for detecting expected failure conditions and throwing `AppError`.
+if (existingUser) {
+  throw new AppError("Email already exists", 409);
+}
+```
 
-Example:
+Repositories must not throw `AppError` to represent business rules such as "user not found" or "email already exists".
 
-    const user = await repository.findById(id);
+Controllers must not catch `AppError` individually.
 
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
+## Error flow
 
-Another example:
+Expected application failure:
 
-    const existingUser = await repository.findByEmail(email);
+```text
+Service
+  ↓
+throw AppError
+  ↓
+Global error middleware
+  ↓
+HTTP error response
+```
 
-    if (existingUser) {
-      throw new AppError("Email already exists", 409);
-    }
+Unexpected failure:
 
-Do not move business decisions into the controller merely to determine which HTTP error to return.
+```text
+Unexpected error
+  ↓
+Global error middleware
+  ↓
+generic 500 response
+```
 
-## Controller behavior
+## Global error handler
 
-Controllers should not catch every `AppError` individually.
+Use one global HTTP error handler.
 
-Controllers should:
+Conceptually:
 
-1. receive HTTP input;
-2. extract the required data;
-3. call the appropriate service;
-4. return the successful response.
+```ts
+export function errorHandler(error, request, response, next) {
+  if (error instanceof AppError) {
+    return response.status(error.statusCode).json({
+      error: error.message,
+    });
+  }
 
-Errors thrown by services should propagate to the application's global error middleware.
+  return response.status(500).json({
+    error: "Internal server error",
+  });
+}
+```
 
-Avoid patterns such as:
+Adapt framework types and imports to the existing project.
 
-    try {
-      await service.execute();
-    } catch (error) {
-      if (error instanceof AppError) {
-        return response.status(error.statusCode).json(...);
-      }
-    }
+Never expose unexpected error details, stack traces, database errors, or internal implementation details to clients.
 
-in every controller.
+## Status codes
 
-Centralize this behavior in the error middleware.
+Use status codes according to the actual failure semantics.
 
-## Global error middleware
+- `400` — invalid request when no more specific status applies.
+- `401` — authentication required or invalid.
+- `403` — authenticated but not permitted.
+- `404` — requested resource does not exist.
+- `409` — conflict with current state, such as duplicate unique data.
+- `422` — structurally valid request rejected by an application/domain rule.
 
-Use a global Express error-handling middleware.
+Do not deliberately wrap unexpected failures in:
 
-Example:
+```ts
+throw new AppError("Internal server error", 500);
+```
 
-    export function errorHandler(error, request, response, next) {
-      if (error instanceof AppError) {
-        return response.status(error.statusCode).json({
-          error: error.message,
-        });
-      }
+Let unexpected errors propagate to the global handler.
 
-      return response.status(500).json({
-        error: "Internal server error",
-      });
-    }
+Do not use `AppError` for successful responses, redirects, or ordinary infrastructure/gateway failures.
 
-The exact Express types and project-specific imports may be adapted to the repository.
+## Boundaries
 
-Do not expose unexpected internal error details to the client.
+`AppError` represents expected application failures.
 
-## Common status codes
+Structural HTTP input validation belongs to the project's validation convention.
 
-Use HTTP status codes according to their semantics.
+Business decisions belong to Services.
 
-### 400 — Bad Request
+Persistence errors belong to the persistence/infrastructure boundary unless explicitly translated by an established project convention.
 
-Use when the request is invalid and no more specific application status is appropriate.
-
-Example:
-
-    throw new AppError("Invalid request", 400);
-
-### 401 — Unauthorized
-
-Use when authentication is required but the client is not authenticated.
-
-Example:
-
-    throw new AppError("Authentication required", 401);
-
-### 403 — Forbidden
-
-Use when the client is authenticated but does not have permission to perform the operation.
-
-Example:
-
-    throw new AppError("You cannot perform this operation", 403);
-
-### 404 — Not Found
-
-Use when the requested resource does not exist.
-
-Example:
-
-    throw new AppError("User not found", 404);
-
-### 409 — Conflict
-
-Use when the requested operation conflicts with the current application state.
-
-Typical examples:
-
-- duplicate email
-- duplicate unique identifier
-- resource already exists
-- conflicting state
-
-Example:
-
-    throw new AppError("Email already exists", 409);
-
-### 422 — Unprocessable Content
-
-Use when the request is structurally valid but cannot be accepted because of application/domain rules.
-
-Example:
-
-    throw new AppError("User cannot be deactivated while orders are pending", 422);
-
-### 500 — Internal Server Error
-
-Use for unexpected server failures.
-
-Normally, services should not deliberately convert unexpected failures into:
-
-    throw new AppError("Internal server error", 500);
-
-Unexpected errors should propagate to the global error middleware, which returns a generic 500 response.
-
-## Success and infrastructure status codes
-
-Do not use `AppError` for successful responses such as:
-
-- 200 OK
-- 201 Created
-- 204 No Content
-
-Redirect status codes such as 301 and 302 are also outside the responsibility of `AppError`.
-
-Infrastructure/gateway errors such as 502, 503, and 504 should normally be handled by the appropriate infrastructure or integration layer rather than being used as ordinary business errors.
+HTTP translation belongs to the global error handler.
 
 ## Rules
 
-When implementing application logic:
-
-- throw `AppError` for expected application failures;
-- prefer throwing it from the service where the business condition is detected;
-- do not put business rules in controllers;
-- do not access Prisma from the error middleware;
-- do not duplicate AppError handling across controllers;
-- let the global error middleware translate `AppError` into HTTP;
-- let unexpected errors reach the global handler;
-- return a generic 500 response for unexpected errors;
-- never expose stack traces or internal implementation details to clients;
-- choose the HTTP status according to the actual failure semantics;
-- do not add additional AppError fields unless the task or existing project architecture requires them.
-
-## Architecture
-
-The expected flow is:
-
-    Route
-      ↓
-    Controller
-      ↓
-    Service
-      ↓
-    Repository
-      ↓
-    Prisma
-      ↓
-    Database
-
-For failures detected by application/business logic:
-
-    Service
-      ↓
-    throw AppError
-      ↓
-    Global error middleware
-      ↓
-    HTTP response
-
-`AppError` is the application's standard mechanism for representing expected errors across this flow.
+- Throw `AppError` only for expected application failures.
+- Prefer throwing it from the Service where the application condition is detected.
+- Use `message` and `statusCode` as the standard shape.
+- Do not implement business error decisions in Controllers.
+- Do not throw business `AppError`s from Repositories.
+- Do not duplicate `AppError` handling across Controllers.
+- Let the global error handler translate `AppError` into HTTP.
+- Let unexpected errors propagate to the global handler.
+- Return a generic `500` for unexpected failures.
+- Never expose internal error details to clients.
+- Choose status codes according to failure semantics.
+- Do not extend `AppError` unless the task or existing architecture requires it.

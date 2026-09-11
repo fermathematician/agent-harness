@@ -2,406 +2,167 @@
 
 ## Purpose
 
-A Service implements an application use case.
+A Service implements one application use case.
 
-Its responsibility is to coordinate the business rules required to complete an operation.
+Prefer one Service per use case:
 
-A Service should express what the application is trying to do, not how HTTP works and not how persistence is implemented.
+```text
+CreateUserService
+UpdateUserEmailService
+DeactivateUserService
+CancelOrderService
+```
 
-Examples:
-
-- create a user;
-- update a user's email;
-- cancel an order;
-- approve an invoice;
-- transfer ownership;
-- deactivate an account.
-
-Prefer one Service per use case rather than large generic service classes with many unrelated methods.
+Avoid generic god services such as `UserService` containing many unrelated operations.
 
 ## Structure
 
-Prefer explicit use-case classes.
+Use `execute()` as the standard entry point.
 
-Example:
+```ts
+export interface CreateUserRequest {
+  name: string;
+  email: string;
+}
 
-    export interface CreateUserRequest {
-      name: string;
-      email: string;
-    }
+export class CreateUserService {
+  constructor(private readonly userRepository: UserRepository) {}
 
-    export class CreateUserService {
-      constructor(
-        private readonly userRepository: UserRepository,
-      ) {}
-
-      async execute({
-        name,
-        email,
-      }: CreateUserRequest): Promise<User> {
-        // business rules
-
-        return this.userRepository.create({
-          name,
-          email,
-        });
-      }
-    }
-
-Use a predictable entry point such as:
-
-    execute()
-
-This makes services consistent across the project.
+  async execute(input: CreateUserRequest): Promise<User> {
+    // application logic
+  }
+}
+```
 
 ## Dependencies
 
-Services should depend on abstractions required by the use case.
+Inject dependencies through the constructor.
 
-Example:
+Depend on application contracts:
 
-    constructor(
-      private readonly userRepository: UserRepository,
-    ) {}
+```ts
+constructor(
+  private readonly userRepository: UserRepository,
+  private readonly emailGateway: EmailGateway,
+) {}
+```
 
-When a use case needs multiple dependencies, inject them explicitly.
+Never instantiate Prisma repositories, gateways, or other infrastructure inside the Service.
 
-Example:
+Never access Prisma directly from a Service.
 
-    constructor(
-      private readonly userRepository: UserRepository,
-      private readonly emailGateway: EmailGateway,
-      private readonly clock: Clock,
-    ) {}
+## Input and output
 
-Do not instantiate infrastructure dependencies directly inside the Service.
+Service input must describe only the data required by the use case.
 
-Avoid:
+Prefer:
 
-    const repository = new PrismaUserRepository(...)
+```ts
+service.execute({ userId, email });
+```
 
-inside the Service.
+Never pass Express `Request`, `Response`, or other transport objects.
 
-Dependencies should be supplied from outside.
+Return an intentional application result.
+
+Never return HTTP-specific structures such as status codes, headers, or response bodies.
 
 ## Business rules
 
 Business rules belong in the Service.
 
-Example:
+This includes:
 
-    const existingUser =
-      await this.userRepository.findByEmail(email);
-
-    if (existingUser) {
-      throw new AppError(
-        "Email already exists",
-        409,
-      );
-    }
-
-    return this.userRepository.create({
-      name,
-      email,
-    });
-
-The Service decides what conditions are valid for the use case.
-
-Examples of business decisions:
-
-- whether an email may be reused;
-- whether a user may be deactivated;
-- whether an order may be cancelled;
-- whether stock is sufficient;
-- whether the current state permits a transition;
-- whether a user has permission to perform an operation.
-
-## Expected failures
+- uniqueness and conflict rules;
+- resource-level permissions;
+- valid state transitions;
+- balance, stock, and eligibility rules;
+- whether an operation is allowed.
 
 Use `AppError` for expected application failures.
 
-Example:
+```ts
+const user = await this.userRepository.findById(userId);
 
-    if (!user) {
-      throw new AppError(
-        "User not found",
-        404,
-      );
-    }
+if (!user) {
+  throw new AppError("User not found", 404);
+}
+```
 
-    if (!user.active) {
-      throw new AppError(
-        "User is inactive",
-        422,
-      );
-    }
+Interpret Repository `null` results according to the current use case.
 
-Do not return error objects such as:
-
-    return {
-      error: "User not found",
-    };
-
-Expected failures should interrupt the use case through the established application error mechanism.
-
-## Input
-
-Define explicit input types for the use case.
-
-Example:
-
-    export interface UpdateUserEmailRequest {
-      userId: string;
-      email: string;
-    }
-
-Avoid accepting broad or infrastructure-specific objects.
-
-Do not pass HTTP request objects into Services.
-
-Prefer:
-
-    service.execute({
-      userId,
-      email,
-    });
-
-instead of:
-
-    service.execute(request);
-
-The Service input should describe the data required by the use case.
-
-## Output
-
-Return the result of the use case.
-
-The output should be intentional and should not expose unnecessary internal data.
-
-Example:
-
-    export interface CreateUserResult {
-      id: string;
-      name: string;
-      email: string;
-    }
-
-    async execute(
-      input: CreateUserRequest,
-    ): Promise<CreateUserResult> {
-      ...
-    }
-
-Do not return transport-specific response objects.
-
-Avoid:
-
-    {
-      statusCode: 201,
-      body: user,
-    }
-
-HTTP representation belongs outside the Service.
-
-## Orchestration
-
-A Service may coordinate several operations required by one use case.
-
-Example:
-
-    const user =
-      await this.userRepository.findById(userId);
-
-    if (!user) {
-      throw new AppError(
-        "User not found",
-        404,
-      );
-    }
-
-    const existingUser =
-      await this.userRepository.findByEmail(email);
-
-    if (
-      existingUser &&
-      existingUser.id !== user.id
-    ) {
-      throw new AppError(
-        "Email already exists",
-        409,
-      );
-    }
-
-    return this.userRepository.update(
-      userId,
-      { email },
-    );
-
-The Service owns the sequence because the sequence represents application behavior.
-
-## Keep the use case cohesive
-
-A Service should represent one clear operation.
-
-Prefer:
-
-- `CreateUserService`
-- `UpdateUserEmailService`
-- `DeactivateUserService`
-- `GetUserProfileService`
-
-over:
-
-    UserService {
-      create()
-      update()
-      delete()
-      activate()
-      deactivate()
-      changePassword()
-      resetPassword()
-      sendEmail()
-      ...
-    }
-
-Large generic Service classes tend to accumulate unrelated responsibilities.
-
-Prefer small use-case-oriented Services.
+Do not return error objects.
 
 ## Validation
 
-Distinguish structural validation from business validation.
+Structural request validation belongs to the HTTP validation boundary.
 
-Structural validation includes things such as:
+Business validation belongs to the Service.
 
-- required field missing;
-- malformed email;
-- invalid primitive type;
-- invalid request shape.
+Do not duplicate structural validation already guaranteed by the boundary unless an independent application invariant requires it.
 
-Business validation includes things such as:
+## Orchestration
 
-- email already in use;
-- order cannot be cancelled in current state;
-- insufficient balance;
-- user is not allowed to perform the operation.
+A Service owns the sequence of operations required by its use case.
 
-Business validation belongs in the Service.
+It may coordinate multiple Repository or Gateway contracts when necessary.
 
-When the project uses request schema validation, structural validation may happen before the Service.
+Validate important state transitions before persisting them.
 
-Do not duplicate the same validation in multiple layers without a reason.
+When several operations must behave atomically, follow the project's transaction strategy.
 
-## State transitions
-
-Treat important state changes explicitly.
-
-Example:
-
-    if (order.status !== "pending") {
-      throw new AppError(
-        "Only pending orders can be cancelled",
-        422,
-      );
-    }
-
-    return this.orderRepository.updateStatus(
-      order.id,
-      "cancelled",
-    );
-
-Do not perform state transitions without checking whether the transition is valid.
-
-## Side effects
-
-A Service may coordinate side effects required by the use case.
-
-Example:
-
-    const user =
-      await this.userRepository.create(data);
-
-    await this.emailGateway.sendWelcomeEmail(
-      user.email,
-    );
-
-    return user;
-
-When consistency between multiple operations matters, define explicitly whether they require:
-
-- a database transaction;
-- retry behavior;
-- an outbox/event pattern;
-- compensating action.
-
-Do not assume several independent side effects are automatically atomic.
+For external side effects, follow the project's established retry, outbox, event, or compensation strategy when applicable.
 
 ## Error handling
 
-Do not catch errors unless the Service has a concrete reason to recover, translate, retry, or add meaningful application context.
+Do not catch errors unless there is a concrete reason to recover, retry, translate a known error, or add meaningful application context.
 
-Avoid:
+Do not convert unexpected infrastructure failures into `AppError`.
 
-    try {
-      return await this.userRepository.create(data);
-    } catch {
-      throw new AppError(
-        "Could not create user",
-        500,
-      );
-    }
+Unexpected errors should normally propagate to the global error handling boundary.
 
-This converts an unexpected infrastructure error into an expected application error and hides useful information.
+## Boundaries
 
-Let unexpected errors propagate unless the use case has explicit recovery semantics.
+```text
+Controller
+    ↓
+Service
+    ↓
+Repository / Gateway contracts
+```
 
-## Avoid unnecessary abstraction inside the Service
+Service may:
 
-Do not split simple business rules into many tiny helper classes without a concrete need.
+```text
+→ enforce business rules
+→ coordinate application operations
+→ interpret Repository results
+→ throw expected AppErrors
+```
 
-A Service should remain readable as the description of the use case.
+Service must not:
 
-Prefer:
-
-    async execute(input) {
-      const user =
-        await this.userRepository.findById(
-          input.userId,
-        );
-
-      if (!user) {
-        throw new AppError(
-          "User not found",
-          404,
-        );
-      }
-
-      ...
-
-      return result;
-    }
-
-The main execution path should be easy to follow.
-
-Extract helpers when they represent reusable logic or make the use case materially clearer.
+```text
+→ handle HTTP
+→ access Express Request/Response
+→ access Prisma directly
+→ instantiate infrastructure
+→ parse structural HTTP input
+→ return HTTP responses
+```
 
 ## Rules
 
-When implementing a Service:
-
-- represent one clear application use case;
-- prefer one Service class per use case;
-- use a consistent `execute()` entry point;
-- define explicit input and output types;
-- inject dependencies through the constructor;
-- depend on repository and gateway contracts;
-- keep business rules in the Service;
-- use `AppError` for expected application failures;
-- keep the main use-case flow easy to read;
-- coordinate required operations explicitly;
-- validate important state transitions;
-- distinguish business validation from structural request validation;
-- do not instantiate infrastructure dependencies inside the Service;
-- do not return HTTP-specific responses;
-- do not catch unexpected errors without a concrete reason;
-- avoid large generic `UserService`, `OrderService`, or similar god classes.
+- One Service represents one clear use case.
+- Use `execute()` consistently.
+- Use explicit application inputs and intentional outputs.
+- Inject dependencies through the constructor.
+- Depend on contracts, not concrete infrastructure.
+- Keep business rules in the Service.
+- Use `AppError` only for expected application failures.
+- Validate meaningful state transitions.
+- Keep structural HTTP validation outside the Service.
+- Keep HTTP representation outside the Service.
+- Let unexpected errors propagate unless deliberate handling is required.
+- Keep the main `execute()` flow readable.
+- Avoid generic god Service classes.
