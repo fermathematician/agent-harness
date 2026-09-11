@@ -121,6 +121,49 @@ Event types:
 (`testStatus: "passed"`), not rates. Rates like `testPassRate` are computed
 by the dashboard layer across a set of Runs.
 
+### Dashboard
+
+The local dashboard visualizes evaluated Runs using the Task 004 dashboard
+backend (`src/dashboard.ts`); it does not recalculate metric semantics in the
+browser.
+
+Pipeline:
+
+```text
+.pi/audit/tool-calls.jsonl
+        │
+        ▼
+evals/run-eval.ts
+        │
+        ▼
+evals/results/run-evals.jsonl
+        │
+        ▼
+src/dashboard.ts
+        │
+        ▼
+src/dashboard-ui.ts
+        │
+        ▼
+Browser dashboard
+```
+
+Generate evaluated Runs from the audit log:
+
+```bash
+node evals/run-eval.ts
+```
+
+Then start the dashboard:
+
+```bash
+npm run dashboard
+```
+
+Open `http://127.0.0.1:3000`. The dashboard reads
+`evals/results/run-evals.jsonl` on each request, so newly generated RunEval
+data appears after a refresh without restarting the server.
+
 ### Versioning
 
 - **`schemaVersion`**: version of the raw telemetry schema. It identifies

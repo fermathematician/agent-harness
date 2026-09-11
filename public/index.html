@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent Harness Dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div>
+        <h1>Agent Harness Dashboard</h1>
+        <p class="subtitle">Evaluated Runs from the Task 004 dashboard backend.</p>
+      </div>
+      <button id="refresh" type="button">Refresh</button>
+    </header>
+
+    <form id="filters" class="filters">
+      <label>
+        Status
+        <select name="status">
+          <option value="">All</option>
+          <option value="completed">Completed</option>
+          <option value="active">Active</option>
+          <option value="abandoned">Abandoned</option>
+        </select>
+      </label>
+
+      <label>
+        Model
+        <input name="model" type="text" placeholder="exact or null" />
+      </label>
+
+      <label>
+        Task description
+        <input name="taskDescription" type="text" placeholder="exact" />
+      </label>
+
+      <label>
+        Base commit
+        <input name="baseCommit" type="text" placeholder="exact or null" />
+      </label>
+
+      <label>
+        From
+        <input name="from" type="datetime-local" />
+      </label>
+
+      <label>
+        To
+        <input name="to" type="datetime-local" />
+      </label>
+
+      <label class="checkbox">
+        <input name="legacy" type="checkbox" value="true" />
+        Legacy / unassociated (runId: null)
+      </label>
+    </form>
+
+    <main>
+      <section id="overview" aria-labelledby="overview-title">
+        <h2 id="overview-title">Overview</h2>
+        <div id="overview-cards" class="cards"></div>
+      </section>
+
+      <section id="runs" aria-labelledby="runs-title">
+        <h2 id="runs-title">Runs</h2>
+        <div class="table-wrap">
+          <table id="runs-table">
+            <thead>
+              <tr>
+                <th>Run ID</th>
+                <th>Task</th>
+                <th>Model</th>
+                <th>Status</th>
+                <th>Start</th>
+                <th>Duration</th>
+                <th>Tests</th>
+                <th>Typecheck</th>
+                <th>Tool calls</th>
+                <th>Tool errors</th>
+                <th>Files read</th>
+                <th>Files changed</th>
+                <th>Blocked</th>
+              </tr>
+            </thead>
+            <tbody id="runs-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="phases" aria-labelledby="phases-title">
+        <h2 id="phases-title">PLAN vs EXECUTE</h2>
+        <div id="phases-grid" class="phases-grid"></div>
+      </section>
+
+      <section id="tool-usage" aria-labelledby="tool-usage-title">
+        <h2 id="tool-usage-title">Tool Usage</h2>
+        <div class="table-wrap">
+          <table id="tool-usage-table">
+            <thead>
+              <tr>
+                <th>Tool</th>
+                <th>Total calls</th>
+                <th>Average per Run</th>
+                <th>Share</th>
+              </tr>
+            </thead>
+            <tbody id="tool-usage-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="guardrails" aria-labelledby="guardrails-title">
+        <h2 id="guardrails-title">Guardrails</h2>
+        <p class="hint">Guardrail blocks are observed behavior, not application failures.</p>
+        <div id="guardrails-cards" class="cards"></div>
+      </section>
+
+      <section id="comparisons" aria-labelledby="comparisons-title">
+        <h2 id="comparisons-title">Comparisons</h2>
+        <div id="comparisons-grid" class="comparisons-grid"></div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

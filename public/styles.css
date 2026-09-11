@@ -1,0 +1,260 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f5f6f8;
+  --panel: #ffffff;
+  --text: #1c1e21;
+  --muted: #62666d;
+  --border: #d8dbe0;
+  --accent: #2563eb;
+  --completed: #15803d;
+  --active: #2563eb;
+  --abandoned: #b45309;
+  --unassociated: #7c3aed;
+  --empty: #6b7280;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0 24px 48px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.4;
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 0 16px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+button {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 20px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.filters input,
+.filters select {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.filters .checkbox {
+  flex-direction: row;
+  align-items: center;
+  align-self: end;
+}
+
+section {
+  margin-bottom: 28px;
+}
+
+h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.card-label {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.card-value {
+  display: block;
+  margin-top: 6px;
+  font-size: 22px;
+}
+
+.card-subvalue {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th,
+td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+th {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.run-completed td:first-child {
+  border-left: 3px solid var(--completed);
+}
+
+.run-active td:first-child {
+  border-left: 3px solid var(--active);
+}
+
+.run-abandoned td:first-child {
+  border-left: 3px solid var(--abandoned);
+}
+
+.run-completed .status-text,
+.run-active .status-text,
+.run-abandoned .status-text {
+  font-weight: 600;
+}
+
+.empty-cell {
+  color: var(--empty);
+  text-align: center;
+  white-space: normal;
+}
+
+.phases-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.phase-card {
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.phase-card h3 {
+  margin: 0 0 8px;
+}
+
+.phase-card p {
+  margin: 4px 0;
+  color: var(--muted);
+}
+
+.share-label {
+  display: inline-block;
+  min-width: 56px;
+  margin-right: 8px;
+}
+
+.share-track {
+  display: inline-block;
+  width: 120px;
+  height: 8px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+.share-bar {
+  height: 100%;
+  background: var(--accent);
+}
+
+.comparisons-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.comparison-section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.comparison-section h3 {
+  margin: 0 0 8px;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.error-message {
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid #b91c1c;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #7f1d1d;
+}
